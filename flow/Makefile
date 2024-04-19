@@ -131,8 +131,8 @@ MAKEFLAGS += --no-builtin-rules
 
 #-------------------------------------------------------------------------------
 # Proper way to initiate SHELL for make
-SHELL          := /usr/bin/env bash
-.SHELLFLAGS    := -o pipefail -c
+SHELL          := bash
+.SHELLFLAGS    := -o pipefail -x -c
 
 #-------------------------------------------------------------------------------
 # Setup variables to point to root / head of the OpenROAD directory
@@ -278,7 +278,7 @@ YOSYS_FLAGS += -v 3
 TIME_CMD = /usr/bin/time -f 'Elapsed time: %E[h:]min:sec. CPU time: user %U sys %S (%P). Peak memory: %MKB.'
 TIME_TEST = $(shell $(TIME_CMD) echo foo 2>/dev/null)
 ifeq (, $(strip $(TIME_TEST)))
-  TIME_CMD = /usr/bin/time
+  TIME_CMD = time
 endif
 
 # The following determine the executable location for each tool used by this flow.
