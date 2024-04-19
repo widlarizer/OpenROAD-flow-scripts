@@ -135,8 +135,8 @@ MAKEFLAGS += --no-builtin-rules
 
 #-------------------------------------------------------------------------------
 # Proper way to initiate SHELL for make
-SHELL          := /usr/bin/env bash
-.SHELLFLAGS    := -o pipefail -c
+SHELL          := bash
+.SHELLFLAGS    := -o pipefail -x -c
 
 #-------------------------------------------------------------------------------
 # Setup variables to point to root / head of the OpenROAD directory
