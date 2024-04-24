@@ -271,7 +271,7 @@ ifneq ($(USE_LSORACLE),)
   YOSYS_FLAGS ?= -m $(LSORACLE_PLUGIN)
 endif
 
-YOSYS_FLAGS += -v 3
+# YOSYS_FLAGS += -v 3
 
 #-------------------------------------------------------------------------------
 # setup all commands used within this flow
