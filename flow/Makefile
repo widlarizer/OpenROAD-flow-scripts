@@ -212,8 +212,8 @@ export NUM_CORES
 export TIME_BIN   ?= env time
 TIME_CMD = $(TIME_BIN) -f 'Elapsed time: %E[h:]min:sec. CPU time: user %U sys %S (%P). Peak memory: %MKB.'
 TIME_TEST = $(shell $(TIME_CMD) echo foo 2>/dev/null)
-ifeq (,$(strip $(TIME_TEST)))
-  TIME_CMD = $(TIME_BIN)
+ifeq (, $(strip $(TIME_TEST)))
+  TIME_CMD = env time
 endif
 
 # The following determine the executable location for each tool used by this flow.
