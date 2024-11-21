@@ -25,12 +25,21 @@ stages = [stage for stage in preferred_order if stage in stages] + [
 markdown_table = ""
 
 markdown_table += "## Variables in alphabetic order\n\n"
-table_header = "| Variable | Description |\n| --- | --- |\n"
+table_header = """
+| Variable | Description | Default | Deprecated |
+| --- | --- | --- | --- |
+"""
 table_rows = ""
 for key in sorted(data):
     value = data[key]
     description = value.get("description", "").replace("\n", " ").strip()
-    table_rows += f'| <a name="{key}"></a>{key} | {description} |\n'
+    table_rows += (
+        f'| <a name="{key}"></a>{key}'
+        + f"| {description}"
+        + f'| {value.get("default", "")}'
+        + f'| {"yes" if value.get("deprecated", 0) == 1 else ""}'
+        + "|\n"
+    )
 
 markdown_table += table_header + table_rows
 
