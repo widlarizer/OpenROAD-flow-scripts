@@ -6,6 +6,7 @@
 # Uncomment or add the design to run
 # ==============================================================================
 
+DESIGN_CONFIG=./designs/sky130hd/aoc2/config.mk
 # DESIGN_CONFIG=./designs/nangate45/aes/config.mk
 # DESIGN_CONFIG=./designs/nangate45/ariane133/config.mk
 # DESIGN_CONFIG=./designs/nangate45/ariane136/config.mk
