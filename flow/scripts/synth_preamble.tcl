@@ -30,15 +30,26 @@ if {[env_var_exists_and_non_empty VERILOG_INCLUDE_DIRS]} {
   set vIdirsArgs [join $vIdirsArgs]
 }
 
+source $::env(SCRIPTS_DIR)/synth_stdcells.tcl
 
 # Read verilog files
-foreach file $::env(VERILOG_FILES) {
-  if {[file extension $file] == ".rtlil"} {
-    read_rtlil $file
-  } elseif {[file extension $file] == ".json"} {
-    read_json $file
-  } else {
-    read_verilog -defer -sv {*}$vIdirsArgs $file
+if {[env_var_exists_and_non_empty SYNTH_USE_VERIFIC] && !([file extension $::env(VERILOG_FILES)] == ".rtlil")} {
+    if {[env_var_exists_and_non_empty VERILOG_INCLUDE_DIRS]} {
+	verific -vlog-incdir {*}$::env(VERILOG_INCLUDE_DIRS)
+    }
+    if {[env_var_exists_and_non_empty VERILOG_DEFINES]} {
+	verific -vlog-define {*}$::env(VERILOG_DEFINES)
+    }
+    verific -sv2012 {*}$::env(VERILOG_FILES)
+} else {
+  foreach file $::env(VERILOG_FILES) {
+    if {[file extension $file] == ".rtlil"} {
+      read_rtlil -overwrite $file
+    } elseif {[file extension $file] == ".json"} {
+      read_json $file
+    } else {
+      read_verilog -defer -sv {*}$vIdirsArgs $file
+    }
   }
 }
 
