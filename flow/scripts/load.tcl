@@ -2,9 +2,6 @@ source $::env(SCRIPTS_DIR)/util.tcl
 
 source $::env(SCRIPTS_DIR)/report_metrics.tcl
 
-# Temporarily disable sta's threading due to random failures
-sta::set_thread_count 1
-
 proc load_design {design_file sdc_file} {
   # Read liberty files
   source $::env(SCRIPTS_DIR)/read_liberty.tcl
@@ -31,10 +28,10 @@ proc load_design {design_file sdc_file} {
   read_sdc $::env(RESULTS_DIR)/$sdc_file
 
   if [file exists $::env(PLATFORM_DIR)/derate.tcl] {
-    source $::env(PLATFORM_DIR)/derate.tcl
+    log_cmd source $::env(PLATFORM_DIR)/derate.tcl
   }
 
-  source $::env(PLATFORM_DIR)/setRC.tcl
+  log_cmd source $::env(PLATFORM_DIR)/setRC.tcl
 
   if { [env_var_equals LIB_MODEL CCS] } {
     puts "Using CCS delay calculation"
@@ -100,7 +97,13 @@ proc write_eqy_script { } {
     puts $outfile "prep -top $top_cell -flatten\nmemory_map\n\n"
 
     # Recommendation from eqy team on how to speed up a design
-    puts $outfile "\[match *]\ngate-nomatch _*_.*\n\n"
+    puts $outfile "\[match *]\ngate-nomatch _*_.*"
+
+    # See issue OpenROAD#6545 "Equivalence check failure due to non-unique resizer nets"
+    puts $outfile "gate-nomatch net*"
+
+    # Necessary to avoid false positive after Yosys 0.49
+    puts $outfile "gate-nomatch clone*\n\n"
 
     # Equivalence check recipe 1
     puts $outfile "\[strategy basic]\nuse sat\ndepth 10\n\n"

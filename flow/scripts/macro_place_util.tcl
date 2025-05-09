@@ -1,6 +1,15 @@
 if {[find_macros] != ""} {
-# If wrappers defined replace macros with their wrapped version
-# # ----------------------------------------------------------------------------
+  if {![env_var_exists_and_non_empty RTLMP_RPT_DIR]} {
+    set ::env(RTLMP_RPT_DIR) "$::env(OBJECTS_DIR)/rtlmp"
+  }
+  if {![env_var_exists_and_non_empty RTLMP_RPT_FILE]} {
+    set ::env(RTLMP_RPT_FILE) "partition.txt"
+  }
+  if {![env_var_exists_and_non_empty RTLMP_BLOCKAGE_FILE]} {
+    set ::env(RTLMP_BLOCKAGE_FILE) "$::env(OBJECTS_DIR)/rtlmp/partition.txt.blockage"
+  }
+
+  # If wrappers defined replace macros with their wrapped version
   if {[env_var_exists_and_non_empty MACRO_WRAPPERS]} {
     source $::env(MACRO_WRAPPERS)
 
@@ -18,25 +27,19 @@ if {[find_macros] != ""} {
   }
 
   lassign $::env(MACRO_PLACE_HALO) halo_x halo_y
-  lassign $::env(MACRO_PLACE_CHANNEL) channel_x channel_y
   set halo_max [expr max($halo_x, $halo_y)]
-  set channel_max [expr max($channel_x, $channel_y)]
-  set blockage_width [expr max($halo_max, $channel_max/2)]
+  set blockage_width $halo_max
 
-  
   if {[env_var_exists_and_non_empty MACRO_BLOCKAGE_HALO]} {
     set blockage_width $::env(MACRO_BLOCKAGE_HALO)
   }
 
   if {[env_var_exists_and_non_empty MACRO_PLACEMENT_TCL]} {
-    source $::env(MACRO_PLACEMENT_TCL)
-    puts "Using manual macro placement file $::env(MACRO_PLACEMENT_TCL)"
+    log_cmd source $::env(MACRO_PLACEMENT_TCL)
   } elseif {[env_var_exists_and_non_empty MACRO_PLACEMENT]} {
     source $::env(SCRIPTS_DIR)/read_macro_placement.tcl
-    puts "Using manual macro placement file $::env(MACRO_PLACEMENT)"
-    read_macro_placement $::env(MACRO_PLACEMENT)
-  } elseif {[env_var_equals RTLMP_FLOW 1]} {
-    puts "HierRTLMP Flow enabled..."
+    log_cmd read_macro_placement $::env(MACRO_PLACEMENT)
+  } else {
     set additional_rtlmp_args ""
     append_env_var additional_rtlmp_args RTLMP_MAX_LEVEL -max_num_level 1
     append_env_var additional_rtlmp_args RTLMP_MAX_INST -max_num_inst 1
@@ -52,16 +55,14 @@ if {[find_macros] != ""} {
     append_env_var additional_rtlmp_args RTLMP_OUTLINE_WT -outline_weight 1
     append_env_var additional_rtlmp_args RTLMP_BOUNDARY_WT -boundary_weight 1
     append_env_var additional_rtlmp_args RTLMP_NOTCH_WT -notch_weight 1
-    append_env_var additional_rtlmp_args RTLMP_DEAD_SPACE -dead_space 1
-    append_env_var additional_rtlmp_args RTLMP_CONFIG_FILE -config_file 1
+    append_env_var additional_rtlmp_args RTLMP_DEAD_SPACE -target_dead_space 1
     append_env_var additional_rtlmp_args RTLMP_RPT_DIR -report_directory 1
     append_env_var additional_rtlmp_args RTLMP_FENCE_LX -fence_lx 1
     append_env_var additional_rtlmp_args RTLMP_FENCE_LY -fence_ly 1
     append_env_var additional_rtlmp_args RTLMP_FENCE_UX -fence_ux 1
     append_env_var additional_rtlmp_args RTLMP_FENCE_UY -fence_uy 1
 
-    source $::env(SCRIPTS_DIR)/set_place_density.tcl
-    append additional_rtlmp_args " -target_util $place_density"
+    append additional_rtlmp_args " -target_util [place_density_with_lb_addon]"
 
     set all_args $additional_rtlmp_args
 
@@ -70,10 +71,6 @@ if {[find_macros] != ""} {
     }
 
     log_cmd rtl_macro_placer {*}$all_args
-  } else {
-    macro_placement \
-      -halo $::env(MACRO_PLACE_HALO) \
-      -channel $::env(MACRO_PLACE_CHANNEL)
   }
 
   source $::env(SCRIPTS_DIR)/placement_blockages.tcl

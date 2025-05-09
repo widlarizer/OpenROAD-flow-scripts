@@ -23,22 +23,6 @@
 # DESIGN_CONFIG=./designs/nangate45/swerv_wrapper/config.mk
 # DESIGN_CONFIG=./designs/nangate45/tinyRocket/config.mk
 
-# DESIGN_CONFIG=./designs/tsmc65lp/aes/config.mk
-# DESIGN_CONFIG=./designs/tsmc65lp/ariane/config.mk
-# DESIGN_CONFIG=./designs/tsmc65lp/black_parrot/config.mk
-# DESIGN_CONFIG=./designs/tsmc65lp/bp_be_top/config.mk
-# DESIGN_CONFIG=./designs/tsmc65lp/bp_fe_top/config.mk
-# DESIGN_CONFIG=./designs/tsmc65lp/bp_multi_top/config.mk
-# DESIGN_CONFIG=./designs/tsmc65lp/coyote/config.mk
-# DESIGN_CONFIG=./designs/tsmc65lp/dynamic_node/config.mk
-# DESIGN_CONFIG=./designs/tsmc65lp/gcd/config.mk
-# DESIGN_CONFIG=./designs/tsmc65lp/ibex/config.mk
-# DESIGN_CONFIG=./designs/tsmc65lp/jpeg/config.mk
-# DESIGN_CONFIG=./designs/tsmc65lp/swerv/config.mk
-# DESIGN_CONFIG=./designs/tsmc65lp/swerv_wrapper/config.mk
-# DESIGN_CONFIG=./designs/tsmc65lp/tinyRocket/config.mk
-# DESIGN_CONFIG=./designs/tsmc65lp/vanilla5/config.mk
-
 # DESIGN_CONFIG=./designs/gf12/aes/config.mk
 # DESIGN_CONFIG=./designs/gf12/ariane/config.mk
 # DESIGN_CONFIG=./designs/gf12/ca53/config.mk
@@ -56,8 +40,6 @@
 
 # DESIGN_CONFIG=./designs/sky130hd/aes/config.mk
 # DESIGN_CONFIG=./designs/sky130hd/chameleon/config.mk
-# DESIGN_CONFIG=./designs/sky130hd/chameleon_hier/config.mk
-# DESIGN_CONFIG=./designs/sky130hd/coyote_tc/config.mk
 # DESIGN_CONFIG=./designs/sky130hd/gcd/config.mk
 # DESIGN_CONFIG=./designs/sky130hd/ibex/config.mk
 # DESIGN_CONFIG=./designs/sky130hd/jpeg/config.mk
@@ -84,8 +66,6 @@
 # DESIGN_CONFIG=./designs/intel16/aes/config.mk
 # DESIGN_CONFIG=./designs/intel16/gcd/config.mk
 
-# DESIGN_CONFIG=./designs/intel22/aes/config.mk
-# DESIGN_CONFIG=./designs/intel22/gcd/config.mk
 # DESIGN_CONFIG=./designs/intel22/ibex/config.mk
 # DESIGN_CONFIG=./designs/intel22/jpeg/config.mk
 
@@ -100,18 +80,35 @@
 #DESIGN_CONFIG=./designs/ihp-sg13g2/gcd/config.mk
 #DESIGN_CONFIG=./designs/ihp-sg13g2/spi/config.mk
 #DESIGN_CONFIG=./designs/ihp-sg13g2/riscv32i/config.mk
+#DESIGN_CONFIG=./designs/ihp-sg13g2/i2c-gpio-expander/config.mk
 
 # Default design
 DESIGN_CONFIG ?= ./designs/nangate45/gcd/config.mk
-
-# Include design and platform configuration before setting default options
-# in this file. This allows the DESIGN_CONFIG to set different defaults than
-# this file.
+export DESIGN_CONFIG
 include $(DESIGN_CONFIG)
 
-# If we are running headless use offscreen rendering for save_image
-ifeq ($(DISPLAY),)
-export QT_QPA_PLATFORM ?= offscreen
+export DESIGN_DIR ?= $(dir $(DESIGN_CONFIG))
+
+# default value "base" is duplicated from variables.yaml because we need it
+# earlier in the flow for BLOCKS. BLOCKS is a feature specific to the
+# ORFS Makefile.
+export FLOW_VARIANT?=base
+# BLOCKS is a ORFS make flow specific feature.
+ifneq ($(BLOCKS),)
+  # Normally this comes from variables.yaml, but we need it here to set up these variables
+  # which are part of the DESIGN_CONFIG. BLOCKS is a Makefile specific concept.
+  $(foreach block,$(BLOCKS),$(eval BLOCK_LEFS += ./results/$(PLATFORM)/$(DESIGN_NICKNAME)_$(block)/$(FLOW_VARIANT)/${block}.lef))
+  $(foreach block,$(BLOCKS),$(eval BLOCK_LIBS += ./results/$(PLATFORM)/$(DESIGN_NICKNAME)_$(block)/$(FLOW_VARIANT)/${block}.lib))
+  $(foreach block,$(BLOCKS),$(eval BLOCK_GDS += ./results/$(PLATFORM)/$(DESIGN_NICKNAME)_$(block)/$(FLOW_VARIANT)/6_final.gds))
+  $(foreach block,$(BLOCKS),$(eval BLOCK_CDL += ./results/$(PLATFORM)/$(DESIGN_NICKNAME)_$(block)/$(FLOW_VARIANT)/6_final.cdl))
+  $(foreach block,$(BLOCKS),$(eval BLOCK_LOG_FOLDERS += ./logs/$(PLATFORM)/$(DESIGN_NICKNAME)_$(block)/$(FLOW_VARIANT)/))
+  export ADDITIONAL_LEFS += $(BLOCK_LEFS)
+  export ADDITIONAL_LIBS += $(BLOCK_LIBS)
+  export ADDITIONAL_GDS += $(BLOCK_GDS)
+  export GDS_FILES += $(BLOCK_GDS)
+  ifneq ($(CDL_FILES),)
+    export CDL_FILES += $(BLOCK_CDL)
+  endif
 endif
 
 # ==============================================================================
@@ -136,193 +133,18 @@ MAKEFLAGS += --no-builtin-rules
 SHELL          := /usr/bin/env bash
 .SHELLFLAGS    := -o pipefail -c
 
+
 #-------------------------------------------------------------------------------
 # Setup variables to point to root / head of the OpenROAD directory
 # - the following settings allowed user to point OpenROAD binaries to different
 #   location
 # - default is current install / clone directory
 ifeq ($(origin FLOW_HOME), undefined)
-FLOW_HOME := $(shell pwd)
+FLOW_HOME := $(abspath $(dir $(firstword $(MAKEFILE_LIST))))
 endif
 export FLOW_HOME
 
-#-------------------------------------------------------------------------------
-# Setup variables to point to other location for the following sub directory
-# - designs - default is under current directory
-# - platforms - default is under current directory
-# - work home - default is current directory
-# - utils, scripts, test - default is under current directory
-export DESIGN_HOME   ?= $(FLOW_HOME)/designs
-export PLATFORM_HOME ?= $(FLOW_HOME)/platforms
-export WORK_HOME     ?= .
-
-export UTILS_DIR     ?= $(FLOW_HOME)/util
-export SCRIPTS_DIR   ?= $(FLOW_HOME)/scripts
-export TEST_DIR      ?= $(FLOW_HOME)/test
-
-$(foreach line,$(shell $(SCRIPTS_DIR)/defaults.py),$(eval export $(line)))
-
-PUBLIC=nangate45 sky130hd sky130hs asap7 ihp-sg13g2 gf180
-
-ifneq ($(wildcard $(PLATFORM_HOME)/$(PLATFORM)),)
-  export PLATFORM_DIR = $(PLATFORM_HOME)/$(PLATFORM)
-else ifneq ($(findstring $(PLATFORM),$(PUBLIC)),)
-  export PLATFORM_DIR = ./platforms/$(PLATFORM)
-else ifneq ($(wildcard ../../$(PLATFORM)),)
-  export PLATFORM_DIR = ../../$(PLATFORM)
-else
-  $(error [ERROR][FLOW] Platform '$(PLATFORM)' not found.)
-endif
-
-include $(PLATFORM_DIR)/config.mk
-
-# Enables hierarchical yosys
-export SYNTH_HIERARCHICAL ?= 0
-export SYNTH_STOP_MODULE_SCRIPT = $(RESULTS_DIR)/keep_hierarchy.tcl
-export HIER_REPORT_SCRIPT = $(SCRIPTS_DIR)/synth_hier_report.tcl
-export MAX_UNGROUP_SIZE ?= 0
-
-# Enables Re-synthesis for area reclaim
-export RESYNTH_AREA_RECOVER ?= 0
-export RESYNTH_TIMING_RECOVER ?= 0
-export ABC_AREA ?= 0
-
-# User adjustable synthesis arguments
-export SYNTH_ARGS ?= -flatten
-# Not normally adjusted by user
-export SYNTH_OPERATIONS_ARGS ?= -extra-map $(FLOW_HOME)/platforms/common/lcu_kogge_stone.v
-export SYNTH_FULL_ARGS ?= $(SYNTH_ARGS) $(SYNTH_OPERATIONS_ARGS)
-
-# Global setting for Floorplan
-export PLACE_PINS_ARGS
-
-export FLOW_VARIANT ?= base
-
-export GPL_TIMING_DRIVEN ?= 1
-export GPL_ROUTABILITY_DRIVEN ?= 1
-
-# Cell padding in SITE widths to ease rout-ability.  Applied to both sides
-export CELL_PAD_IN_SITES_GLOBAL_PLACEMENT ?= 0
-export CELL_PAD_IN_SITES_DETAIL_PLACEMENT ?= 0
-
-export ENABLE_DPO ?= 1
-export DPO_MAX_DISPLACEMENT ?= 5 1
-
-# Setup working directories
-export DESIGN_NICKNAME ?= $(DESIGN_NAME)
-
-export DESIGN_CONFIG
-export DESIGN_DIR  = $(dir $(DESIGN_CONFIG))
-export LOG_DIR     = $(WORK_HOME)/logs/$(PLATFORM)/$(DESIGN_NICKNAME)/$(FLOW_VARIANT)
-export OBJECTS_DIR = $(WORK_HOME)/objects/$(PLATFORM)/$(DESIGN_NICKNAME)/$(FLOW_VARIANT)
-export REPORTS_DIR = $(WORK_HOME)/reports/$(PLATFORM)/$(DESIGN_NICKNAME)/$(FLOW_VARIANT)
-export RESULTS_DIR = $(WORK_HOME)/results/$(PLATFORM)/$(DESIGN_NICKNAME)/$(FLOW_VARIANT)
-
-ifneq ($(BLOCKS),)
-  $(foreach block,$(BLOCKS),$(eval BLOCK_LEFS += ./results/$(PLATFORM)/$(DESIGN_NICKNAME)_$(block)/$(FLOW_VARIANT)/${block}.lef))
-  $(foreach block,$(BLOCKS),$(eval BLOCK_LIBS += ./results/$(PLATFORM)/$(DESIGN_NICKNAME)_$(block)/$(FLOW_VARIANT)/${block}.lib))
-  $(foreach block,$(BLOCKS),$(eval BLOCK_GDS += ./results/$(PLATFORM)/$(DESIGN_NICKNAME)_$(block)/$(FLOW_VARIANT)/6_final.gds))
-  $(foreach block,$(BLOCKS),$(eval BLOCK_CDL += ./results/$(PLATFORM)/$(DESIGN_NICKNAME)_$(block)/$(FLOW_VARIANT)/6_final.cdl))
-  $(foreach block,$(BLOCKS),$(eval BLOCK_LOG_FOLDERS += ./logs/$(PLATFORM)/$(DESIGN_NICKNAME)_$(block)/$(FLOW_VARIANT)/))
-  export ADDITIONAL_LEFS += $(BLOCK_LEFS)
-  export ADDITIONAL_LIBS += $(BLOCK_LIBS)
-  export ADDITIONAL_GDS += $(BLOCK_GDS)
-  export GDS_FILES += $(BLOCK_GDS)
-  ifneq ($(CDL_FILES),)
-    export CDL_FILES += $(BLOCK_CDL)
-  endif
-endif
-
-export RTLMP_FLOW ?= 1
-export RTLMP_RPT_DIR ?= $(OBJECTS_DIR)/rtlmp
-export RTLMP_RPT_FILE ?= partition.txt
-export RTLMP_BLOCKAGE_FILE ?= $(OBJECTS_DIR)/rtlmp/partition.txt.blockage
-
-#-------------------------------------------------------------------------------
-ifeq (,$(strip $(NUM_CORES)))
-  # Linux (utility program)
-  NUM_CORES := $(shell nproc 2>/dev/null)
-
-  ifeq (,$(strip $(NUM_CORES)))
-    # Linux (generic)
-    NUM_CORES := $(shell grep -c ^processor /proc/cpuinfo 2>/dev/null)
-  endif
-  ifeq (,$(strip $(NUM_CORES)))
-    # BSD (at least FreeBSD and Mac OSX)
-    NUM_CORES := $(shell sysctl -n hw.ncpu 2>/dev/null)
-  endif
-  ifeq (,$(strip $(NUM_CORES)))
-    # Fallback
-    NUM_CORES := 1
-  endif
-endif
-export NUM_CORES
-
-YOSYS_FLAGS += -v 3
-
-#-------------------------------------------------------------------------------
-# setup all commands used within this flow
-export TIME_BIN   ?= env time
-TIME_CMD = $(TIME_BIN) -f 'Elapsed time: %E[h:]min:sec. CPU time: user %U sys %S (%P). Peak memory: %MKB.'
-TIME_TEST = $(shell $(TIME_CMD) echo foo 2>/dev/null)
-ifeq (,$(strip $(TIME_TEST)))
-  TIME_CMD = $(TIME_BIN)
-endif
-
-# The following determine the executable location for each tool used by this flow.
-# Priority is given to
-#       1 user explicit set with variable in Makefile or command line, for instance setting OPENROAD_EXE
-#       2 ORFS compiled tools: openroad, yosys
-export OPENROAD_EXE      ?= $(abspath $(FLOW_HOME)/../tools/install/OpenROAD/bin/openroad)
-export OPENSTA_EXE       ?= $(abspath $(FLOW_HOME)/../tools/install/OpenROAD/bin/sta)
-
-OPENROAD_ARGS            = -no_init -threads $(NUM_CORES) $(OR_ARGS)
-OPENROAD_CMD             = $(OPENROAD_EXE) -exit $(OPENROAD_ARGS)
-OPENROAD_NO_EXIT_CMD     = $(OPENROAD_EXE) $(OPENROAD_ARGS)
-OPENROAD_GUI_CMD         = $(OPENROAD_EXE) -gui $(OR_ARGS)
-
-YOSYS_EXE               ?= $(abspath $(FLOW_HOME)/../tools/install/yosys/bin/yosys)
-
-# Use locally installed and built klayout if it exists, otherwise use klayout in path
-KLAYOUT_DIR = $(abspath $(FLOW_HOME)/../tools/install/klayout/)
-KLAYOUT_BIN_FROM_DIR = $(KLAYOUT_DIR)/klayout
-
-ifeq ($(wildcard $(KLAYOUT_BIN_FROM_DIR)), $(KLAYOUT_BIN_FROM_DIR))
-KLAYOUT_CMD ?= sh -c 'LD_LIBRARY_PATH=$(dir $(KLAYOUT_BIN_FROM_DIR)) $$0 "$$@"' $(KLAYOUT_BIN_FROM_DIR)
-else
-ifeq ($(KLAYOUT_CMD),)
-KLAYOUT_CMD := $(shell command -v klayout)
-endif
-endif
-KLAYOUT_FOUND            = $(if $(KLAYOUT_CMD),,$(error KLayout not found in PATH))
-
-ifneq ($(shell command -v stdbuf),)
-  STDBUF_CMD ?= stdbuf -o L
-endif
-
-#-------------------------------------------------------------------------------
-WRAPPED_LEFS = $(foreach lef,$(notdir $(WRAP_LEFS)),$(OBJECTS_DIR)/lef/$(lef:.lef=_mod.lef))
-WRAPPED_LIBS = $(foreach lib,$(notdir $(WRAP_LIBS)),$(OBJECTS_DIR)/$(lib:.lib=_mod.lib))
-export ADDITIONAL_LEFS += $(WRAPPED_LEFS) $(WRAP_LEFS)
-export LIB_FILES += $(WRAP_LIBS) $(WRAPPED_LIBS)
-
-export DONT_USE_LIBS   = $(patsubst %.lib.gz, %.lib, $(addprefix $(OBJECTS_DIR)/lib/, $(notdir $(LIB_FILES))))
-export DONT_USE_SC_LIB ?= $(firstword $(DONT_USE_LIBS))
-
-# Stream system used for final result (GDS is default): GDS, GSDII, GDS2, OASIS, or OAS
-STREAM_SYSTEM ?= GDS
-ifneq ($(findstring GDS,$(shell echo $(STREAM_SYSTEM) | tr '[:lower:]' '[:upper:]')),)
-	export STREAM_SYSTEM_EXT := gds
-	GDSOAS_FILES = $(GDS_FILES)
-	ADDITIONAL_GDSOAS = $(ADDITIONAL_GDS)
-	SEAL_GDSOAS = $(SEAL_GDS)
-else
-	export STREAM_SYSTEM_EXT := oas
-	GDSOAS_FILES = $(OAS_FILES)
-	ADDITIONAL_GDSOAS = $(ADDITIONAL_OAS)
-	SEAL_GDSOAS = $(SEAL_OAS)
-endif
-export WRAPPED_GDSOAS = $(foreach lef,$(notdir $(WRAP_LEFS)),$(OBJECTS_DIR)/$(lef:.lef=_mod.$(STREAM_SYSTEM_EXT)))
+include $(FLOW_HOME)/scripts/variables.mk
 
 define GENERATE_ABSTRACT_RULE
 ifeq ($(wildcard $(3)),)
@@ -378,7 +200,7 @@ $(DONT_USE_LIBS): $$(filter %$$(@F) %$$(@F).gz,$(LIB_FILES))
 	@mkdir -p $(OBJECTS_DIR)/lib
 	$(UTILS_DIR)/preprocessLib.py -i $^ -o $@
 
-$(OBJECTS_DIR)/lib/merged.lib:
+$(OBJECTS_DIR)/lib/merged.lib: $(DONT_USE_LIBS)
 	$(UTILS_DIR)/mergeLib.pl $(PLATFORM)_merged $(DONT_USE_LIBS) > $@
 
 # Pre-process KLayout tech
@@ -390,18 +212,6 @@ $(OBJECTS_DIR)/klayout_tech.lef: $(TECH_LEF)
 do-klayout_tech:
 	@mkdir -p $(OBJECTS_DIR)
 	cp $(TECH_LEF) $(OBJECTS_DIR)/klayout_tech.lef
-
-KLAYOUT_ENV_VAR_IN_PATH_VERSION = 0.28.11
-KLAYOUT_VERSION := $(if $(KLAYOUT_CMD),$(shell $(KLAYOUT_CMD) -v 2>/dev/null | grep 'KLayout' | cut -d ' ' -f2),)
-
-KLAYOUT_ENV_VAR_IN_PATH = $(shell \
-	if [ -z "$(KLAYOUT_VERSION)" ]; then \
-		echo "not_found"; \
-	elif [ "$$(echo -e "$(KLAYOUT_VERSION)\n$(KLAYOUT_ENV_VAR_IN_PATH_VERSION)" | sort -V | head -n1)" = "$(KLAYOUT_VERSION)" ] && [ "$(KLAYOUT_VERSION)" != "$(KLAYOUT_ENV_VAR_IN_PATH_VERSION)" ]; then \
-		echo "invalid"; \
-	else \
-		echo "valid"; \
-	fi)
 
 $(OBJECTS_DIR)/klayout.lyt: $(KLAYOUT_TECH_FILE) $(OBJECTS_DIR)/klayout_tech.lef
 	$(UNSET_AND_MAKE) do-klayout
@@ -424,12 +234,6 @@ $(OBJECTS_DIR)/klayout_wrap.lyt: $(KLAYOUT_TECH_FILE) $(OBJECTS_DIR)/klayout_tec
 do-klayout_wrap:
 	sed 's,<lef-files>.*</lef-files>,$(foreach file, $(OBJECTS_DIR)/klayout_tech.lef $(WRAP_LEFS),<lef-files>$(shell realpath --relative-to=$(OBJECTS_DIR)/def $(file))</lef-files>),g' $(KLAYOUT_TECH_FILE) > $(OBJECTS_DIR)/klayout_wrap.lyt
 
-# Create Macro wrappers (if necessary)
-# ==============================================================================
-WRAP_CFG = $(PLATFORM_DIR)/wrapper.cfg
-
-
-export TCLLIBPATH := util/cell-veneer $(TCLLIBPATH)
 $(WRAPPED_LEFS):
 	mkdir -p $(OBJECTS_DIR)/lef $(OBJECTS_DIR)/def
 	util/cell-veneer/wrap.tcl -cfg $(WRAP_CFG) -macro $(filter %$(notdir $(@:_mod.lef=.lef)),$(WRAP_LEFS))
@@ -448,8 +252,7 @@ $(WRAPPED_LIBS):
 # |____/ |_| |_| \_| |_| |_| |_|_____|____/___|____/
 #
 .PHONY: synth
-synth: $(RESULTS_DIR)/1_synth.v \
-       $(RESULTS_DIR)/1_synth.sdc
+synth: $(RESULTS_DIR)/1_synth.v
 
 .PHONY: synth-report
 synth-report: synth
@@ -457,10 +260,13 @@ synth-report: synth
 
 .PHONY: do-synth-report
 do-synth-report:
-	($(TIME_CMD) $(OPENROAD_CMD) $(SCRIPTS_DIR)/synth_metrics.tcl) 2>&1 | tee $(LOG_DIR)/1_1_yosys_metrics.log
+	($(TIME_CMD) $(OPENROAD_CMD) $(SCRIPTS_DIR)/synth_metrics.tcl) 2>&1 | tee $(abspath $(LOG_DIR)/1_1_yosys_metrics.log)
 
 .PHONY: memory
 memory:
+	if [ -f $(RESULTS_DIR)/mem_hierarchical.json ]; then \
+		python3 $(SCRIPTS_DIR)/mem_dump.py $(RESULTS_DIR)/mem_hierarchical.json; \
+	fi
 	python3 $(SCRIPTS_DIR)/mem_dump.py $(RESULTS_DIR)/mem.json
 
 # ==============================================================================
@@ -469,47 +275,26 @@ memory:
 # Run Synthesis using yosys
 #-------------------------------------------------------------------------------
 
-export SYNTH_SCRIPT ?= $(SCRIPTS_DIR)/synth.tcl
-export SYNTH_MEMORY_MAX_BITS ?= 4096
-
-.PHONY: do-yosys-keep-hierarchy
-do-yosys-keep-hierarchy:
-	mkdir -p $(RESULTS_DIR) $(LOG_DIR) $(REPORTS_DIR)
-	(export VERILOG_FILES=$(RESULTS_DIR)/1_synth.rtlil; \
-	$(TIME_CMD) $(YOSYS_EXE) $(YOSYS_FLAGS) -c $(HIER_REPORT_SCRIPT)) 2>&1 | tee $(abspath $(LOG_DIR)/1_1_yosys_hier_report.log)
-
-export SDC_FILE_CLOCK_PERIOD = $(RESULTS_DIR)/clock_period.txt
-
 $(SDC_FILE_CLOCK_PERIOD): $(SDC_FILE)
 	mkdir -p $(dir $@)
 	echo $(ABC_CLOCK_PERIOD_IN_PS) > $@
-
-YOSYS_DEPENDENCIES=$(DONT_USE_LIBS) $(WRAPPED_LIBS) $(DONT_USE_SC_LIB) $(DFF_LIB_FILE) $(VERILOG_FILES) $(CACHED_NETLIST) $(LATCH_MAP_FILE) $(ADDER_MAP_FILE) $(SDC_FILE_CLOCK_PERIOD)
 
 .PHONY: yosys-dependencies
 yosys-dependencies: $(YOSYS_DEPENDENCIES)
 
 .PHONY: do-yosys
-do-yosys:
-	mkdir -p $(RESULTS_DIR) $(LOG_DIR) $(REPORTS_DIR) $(OBJECTS_DIR)
-	(export VERILOG_FILES=$(RESULTS_DIR)/1_synth.rtlil; \
-	$(TIME_CMD) $(YOSYS_EXE) $(YOSYS_FLAGS) -c $(SYNTH_SCRIPT)) 2>&1 | tee $(abspath $(LOG_DIR)/1_1_yosys.log)
+do-yosys: $(DONT_USE_SC_LIB)
+	$(SCRIPTS_DIR)/synth.sh $(SYNTH_SCRIPT) $(LOG_DIR)/1_1_yosys.log
 
 .PHONY: do-yosys-canonicalize
-do-yosys-canonicalize: yosys-dependencies
-	mkdir -p $(RESULTS_DIR) $(LOG_DIR) $(REPORTS_DIR) $(OBJECTS_DIR)
-	# NOTE! YOSYS_FLAGS is omitted here because "-v 3" silences helpful error messages
-	($(TIME_CMD) $(YOSYS_EXE) -c $(SCRIPTS_DIR)/synth_canonicalize.tcl) 2>&1 | tee $(abspath $(LOG_DIR)/1_1_yosys_canonicalize.log)
+do-yosys-canonicalize: yosys-dependencies $(DONT_USE_SC_LIB)
+	$(SCRIPTS_DIR)/synth.sh $(SCRIPTS_DIR)/synth_canonicalize.tcl $(LOG_DIR)/1_1_yosys_canonicalize.log
 
 $(RESULTS_DIR)/1_synth.rtlil: $(YOSYS_DEPENDENCIES)
 	$(UNSET_AND_MAKE) do-yosys-canonicalize
 
 $(RESULTS_DIR)/1_1_yosys.v: $(RESULTS_DIR)/1_synth.rtlil
-	$(UNSET_AND_MAKE) do-yosys-keep-hierarchy do-yosys
-
-$(RESULTS_DIR)/1_synth.sdc: $(SDC_FILE)
-	mkdir -p $(RESULTS_DIR)
-	cp $(SDC_FILE) $(RESULTS_DIR)/1_synth.sdc
+	$(UNSET_AND_MAKE) do-yosys
 
 .PHONY: do-synth
 do-synth:
@@ -521,10 +306,10 @@ $(RESULTS_DIR)/1_synth.v: $(RESULTS_DIR)/1_1_yosys.v
 
 .PHONY: clean_synth
 clean_synth:
-	rm -f $(RESULTS_DIR)/1_* $(RESULTS_DIR)/mem.json
+	rm -f $(RESULTS_DIR)/1_* $(RESULTS_DIR)/mem*.json
 	rm -f $(REPORTS_DIR)/synth_*
 	rm -f $(LOG_DIR)/1_*
-	rm -f $(SYNTH_STOP_MODULE_SCRIPT)
+	rm -f $(SYNTH_STATS)
 	rm -f $(SDC_FILE_CLOCK_PERIOD)
 	rm -rf _tmp_yosys-abc-*
 
@@ -541,12 +326,6 @@ floorplan: $(RESULTS_DIR)/2_floorplan.odb \
            $(RESULTS_DIR)/2_floorplan.sdc
 
 # ==============================================================================
-
-ifneq ($(FOOTPRINT),)
-IS_CHIP = 1
-else ifneq ($(FOOTPRINT_TCL),)
-IS_CHIP = 1
-endif
 
 UNSET_VARS = for var in $(UNSET_VARIABLES_NAMES); do unset $$var; done
 
@@ -571,9 +350,11 @@ open_$(1): open_$(2)
 endef
 
 define OPEN_GUI
-.PHONY: $(1)_$(2)
-$(1)_$(2):
-	$(3)=$(RESULTS_DIR)/$(2) $(4) $(SCRIPTS_DIR)/gui.tcl
+.PHONY: open_$(1) gui_$(1)
+open_$(1):
+	$(2)=$(RESULTS_DIR)/$(1) $(OPENROAD_NO_EXIT_CMD) $(SCRIPTS_DIR)/open.tcl
+gui_$(1):
+	$(2)=$(RESULTS_DIR)/$(1) $(OPENROAD_GUI_CMD) $(SCRIPTS_DIR)/open.tcl
 endef
 
 # Separate dependency checking and doing a step. This can
@@ -614,13 +395,7 @@ endif
 
 .PHONY: do-$(1)
 do-$(1): $(OBJECTS_DIR)/copyright.txt
-	@mkdir -p $(RESULTS_DIR) $(LOG_DIR) $(REPORTS_DIR) $(OBJECTS_DIR)
-	@echo Running $(3).tcl, stage $(1)
-	@(set -eo pipefail; \
-	trap 'mv $(LOG_DIR)/$(1).tmp.log $(LOG_DIR)/$(1).log' EXIT; \
-	$(OPENROAD_EXE) $(OPENROAD_ARGS) -exit $(SCRIPTS_DIR)/noop.tcl 2>&1 >$(LOG_DIR)/$(1).tmp.log; \
-	$(TIME_CMD) $(OPENROAD_CMD) -no_splash $(SCRIPTS_DIR)/$(3).tcl -metrics $(LOG_DIR)/$(1).json 2>&1 | \
-	tee -a $(abspath $(LOG_DIR)/$(1).tmp.log))
+	$(SCRIPTS_DIR)/flow.sh $(1) $(3)
 endef
 
 # generate make rules to copy a file, if a dependency change and
@@ -628,7 +403,7 @@ endef
 #
 # The file is copied within the $(RESULTS_DIR)
 #
-# $(1) stem of target, e.g. 2_2_floorplan_io
+# $(1) stem of target, e.g. 2_1_floorplan
 # $(2) basename of file to be copied
 # $(3) further dependencies
 # $(4) target extension, default .odb
@@ -644,33 +419,29 @@ endef
 
 # STEP 1: Translate verilog to odb
 #-------------------------------------------------------------------------------
-$(eval $(call do-step,2_1_floorplan,$(RESULTS_DIR)/1_synth.v $(RESULTS_DIR)/1_synth.sdc $(TECH_LEF) $(SC_LEF) $(ADDITIONAL_LEFS) $(FOOTPRINT) $(SIG_MAP_FILE) $(FOOTPRINT_TCL),floorplan))
+$(eval $(call do-step,2_1_floorplan,$(RESULTS_DIR)/1_synth.v $(RESULTS_DIR)/1_synth.sdc $(TECH_LEF) $(SC_LEF) $(ADDITIONAL_LEFS) $(FOOTPRINT) $(SIG_MAP_FILE) $(FOOTPRINT_TCL) $(DONT_USE_SC_LIB),floorplan))
 
-$(eval $(call do-step,2_2_floorplan_io,$(RESULTS_DIR)/2_1_floorplan.odb $(IO_CONSTRAINTS),io_placement_random))
+$(eval $(call do-copy,2_floorplan,2_1_floorplan.sdc,,.sdc))
 
-# STEP 3: Timing Driven Mixed Sized Placement
+# STEP 2: Macro Placement
 #-------------------------------------------------------------------------------
-$(eval $(call do-step,2_3_floorplan_tdms,$(RESULTS_DIR)/2_2_floorplan_io.odb $(RESULTS_DIR)/1_synth.v $(RESULTS_DIR)/1_synth.sdc $(LIB_FILES),tdms_place))
+$(eval $(call do-step,2_2_floorplan_macro,$(RESULTS_DIR)/2_1_floorplan.odb $(RESULTS_DIR)/1_synth.v $(RESULTS_DIR)/1_synth.sdc $(MACRO_PLACEMENT) $(MACRO_PLACEMENT_TCL),macro_place))
 
-# STEP 4: Macro Placement
+# STEP 3: Tapcell and Welltie insertion
 #-------------------------------------------------------------------------------
-$(eval $(call do-step,2_4_floorplan_macro,$(RESULTS_DIR)/2_3_floorplan_tdms.odb $(RESULTS_DIR)/1_synth.v $(RESULTS_DIR)/1_synth.sdc $(MACRO_PLACEMENT) $(MACRO_PLACEMENT_TCL),macro_place))
+$(eval $(call do-step,2_3_floorplan_tapcell,$(RESULTS_DIR)/2_2_floorplan_macro.odb $(TAPCELL_TCL),tapcell))
 
-# STEP 5: Tapcell and Welltie insertion
+# STEP 4: PDN generation
 #-------------------------------------------------------------------------------
-$(eval $(call do-step,2_5_floorplan_tapcell,$(RESULTS_DIR)/2_4_floorplan_macro.odb $(TAPCELL_TCL),tapcell))
+$(eval $(call do-step,2_4_floorplan_pdn,$(RESULTS_DIR)/2_3_floorplan_tapcell.odb $(PDN_TCL),pdn))
 
-# STEP 6: PDN generation
-#-------------------------------------------------------------------------------
-$(eval $(call do-step,2_6_floorplan_pdn,$(RESULTS_DIR)/2_5_floorplan_tapcell.odb $(PDN_TCL),pdn))
-
-$(eval $(call do-copy,2_floorplan,2_6_floorplan_pdn.odb,))
+$(eval $(call do-copy,2_floorplan,2_4_floorplan_pdn.odb,))
 
 $(RESULTS_DIR)/2_floorplan.sdc: $(RESULTS_DIR)/2_1_floorplan.odb
 
 .PHONY: do-floorplan
 do-floorplan:
-	$(UNSET_AND_MAKE) do-2_1_floorplan do-2_2_floorplan_io do-2_3_floorplan_tdms do-2_4_floorplan_macro do-2_5_floorplan_tapcell do-2_6_floorplan_pdn do-2_floorplan
+	$(UNSET_AND_MAKE) do-2_1_floorplan do-2_2_floorplan_macro do-2_3_floorplan_tapcell do-2_4_floorplan_pdn do-2_floorplan do-2_floorplan.sdc
 
 .PHONY: clean_floorplan
 clean_floorplan:
@@ -790,11 +561,15 @@ $(eval $(call do-step,5_3_fillcell,$(RESULTS_DIR)/5_2_route.odb,fillcell))
 
 $(eval $(call do-copy,5_route,5_3_fillcell.odb))
 
-$(eval $(call do-copy,5_route,4_cts.sdc,,.sdc))
+$(eval $(call do-copy,5_route,5_1_grt.sdc,,.sdc))
 
 .PHONY: do-route
 do-route:
 	$(UNSET_AND_MAKE) do-5_1_grt do-5_2_route do-5_3_fillcell do-5_route do-5_route.sdc
+
+.PHONY: do-grt
+do-grt:
+	$(UNSET_AND_MAKE) do-5_1_grt
 
 .PHONY: clean_route
 clean_route:
@@ -829,7 +604,6 @@ klayout_guides: $(RESULTS_DIR)/5_route.def $(OBJECTS_DIR)/klayout.lyt
 # |  _|  | || |\  || | ___) |  _  || || |\  | |_| |
 # |_|   |___|_| \_|___|____/|_| |_|___|_| \_|\____|
 #
-GDS_FINAL_FILE = $(RESULTS_DIR)/6_final.$(STREAM_SYSTEM_EXT)
 .PHONY: finish
 finish: $(LOG_DIR)/6_report.log \
         $(RESULTS_DIR)/6_final.v \
@@ -876,7 +650,7 @@ generate_abstract: $(RESULTS_DIR)/6_final.gds $(RESULTS_DIR)/6_final.def  $(RESU
 .PHONY: do-generate_abstract
 do-generate_abstract:
 	mkdir -p $(LOG_DIR) $(REPORTS_DIR)
-	($(TIME_CMD) $(OPENROAD_CMD) $(SCRIPTS_DIR)/generate_abstract.tcl -metrics $(LOG_DIR)/generate_abstract.json) 2>&1 | tee $(LOG_DIR)/generate_abstract.log
+	($(TIME_CMD) $(OPENROAD_CMD) $(SCRIPTS_DIR)/generate_abstract.tcl -metrics $(LOG_DIR)/generate_abstract.json) 2>&1 | tee $(abspath $(LOG_DIR)/generate_abstract.log)
 
 .PHONY: clean_abstract
 clean_abstract:
@@ -894,11 +668,10 @@ $(WRAPPED_GDSOAS): $(OBJECTS_DIR)/klayout_wrap.lyt $(WRAPPED_LEFS)
 	        -rd out_file=$@ \
 	        -rd tech_file=$(OBJECTS_DIR)/klayout_wrap.lyt \
 	        -rd layer_map=$(GDS_LAYER_MAP) \
-	        -r $(UTILS_DIR)/def2stream.py) 2>&1 | tee $(LOG_DIR)/6_merge_$(basename $(notdir $@)).log
+	        -r $(UTILS_DIR)/def2stream.py) 2>&1 | tee $(abspath $(LOG_DIR)/6_merge_$(basename $(notdir $@)).log)
 
 # Merge GDS using Klayout
 #-------------------------------------------------------------------------------
-GDS_MERGED_FILE = $(RESULTS_DIR)/6_1_merged.$(STREAM_SYSTEM_EXT)
 $(GDS_MERGED_FILE): $(RESULTS_DIR)/6_final.def $(OBJECTS_DIR)/klayout.lyt $(GDSOAS_FILES) $(WRAPPED_GDSOAS) $(SEAL_GDSOAS)
 	$(UNSET_AND_MAKE) do-gds-merged
 
@@ -912,7 +685,7 @@ do-gds-merged:
 	        -rd out_file=$(GDS_MERGED_FILE) \
 	        -rd tech_file=$(OBJECTS_DIR)/klayout.lyt \
 	        -rd layer_map=$(GDS_LAYER_MAP) \
-	        -r $(UTILS_DIR)/def2stream.py) 2>&1 | tee $(LOG_DIR)/6_1_merge.log
+	        -r $(UTILS_DIR)/def2stream.py) 2>&1 | tee $(abspath $(LOG_DIR)/6_1_merge.log)
 
 $(RESULTS_DIR)/6_final.v: $(LOG_DIR)/6_report.log
 
@@ -932,7 +705,7 @@ ifneq ($(KLAYOUT_DRC_FILE),)
 	$(call KLAYOUT_FOUND)
 	($(TIME_CMD) $(KLAYOUT_CMD) -zz -rd in_gds="$<" \
 	        -rd report_file=$(abspath $@) \
-	        -r $(KLAYOUT_DRC_FILE)) 2>&1 | tee $(LOG_DIR)/6_drc.log
+	        -r $(KLAYOUT_DRC_FILE)) 2>&1 | tee $(abspath $(LOG_DIR)/6_drc.log)
 	# Hacky way of getting DRV count (don't error on no matches)
 	grep -c "<value>" $@ > $(REPORTS_DIR)/6_drc_count.rpt || [[ $$? == 1 ]]
 else
@@ -940,7 +713,7 @@ else
 endif
 
 $(RESULTS_DIR)/6_final.cdl: $(RESULTS_DIR)/6_final.v
-	($(TIME_CMD) $(OPENROAD_CMD) $(SCRIPTS_DIR)/cdl.tcl) 2>&1 | tee $(LOG_DIR)/6_cdl.log
+	($(TIME_CMD) $(OPENROAD_CMD) $(SCRIPTS_DIR)/cdl.tcl) 2>&1 | tee $(abspath $(LOG_DIR)/6_cdl.log)
 
 $(OBJECTS_DIR)/6_final_concat.cdl: $(RESULTS_DIR)/6_final.cdl $(CDL_FILE)
 	cat $^ > $@
@@ -954,7 +727,7 @@ ifneq ($(KLAYOUT_LVS_FILE),)
 	($(TIME_CMD) $(KLAYOUT_CMD) -b -rd in_gds="$<" \
 	        -rd cdl_file=$(abspath $(OBJECTS_DIR)/6_final_concat.cdl) \
 	        -rd report_file=$(abspath $@) \
-	        -r $(KLAYOUT_LVS_FILE)) 2>&1 | tee $(LOG_DIR)/6_lvs.log
+	        -r $(KLAYOUT_LVS_FILE)) 2>&1 | tee $(abspath $(LOG_DIR)/6_lvs.log)
 else
 	echo "LVS not supported on this platform" > $@
 endif
@@ -997,16 +770,8 @@ nuke: clean_test clean_issues
 	rm -rf *.rpt *.rpt.old *.def.v pin_dumper.log
 	rm -f $(OBJECTS_DIR)/versions.txt $(OBJECTS_DIR)/copyright.txt dummy.guide
 
-.PHONY: vars
-vars:
-	$(UTILS_DIR)/generate-vars.sh vars
-
 # DEF/GDS/OAS viewer shortcuts
 #-------------------------------------------------------------------------------
-RESULTS_ODB = $(notdir $(sort $(wildcard $(RESULTS_DIR)/*.odb)))
-RESULTS_DEF = $(notdir $(sort $(wildcard $(RESULTS_DIR)/*.def)))
-RESULTS_GDS = $(notdir $(sort $(wildcard $(RESULTS_DIR)/*.gds)))
-RESULTS_OAS = $(notdir $(sort $(wildcard $(RESULTS_DIR)/*.oas)))
 .PHONY: $(foreach file,$(RESULTS_DEF) $(RESULTS_GDS) $(RESULTS_OAS),klayout_$(file))
 $(foreach file,$(RESULTS_DEF) $(RESULTS_GDS) $(RESULTS_OAS),klayout_$(file)): klayout_%: $(OBJECTS_DIR)/klayout.lyt
 	$(KLAYOUT_CMD) -nn $(OBJECTS_DIR)/klayout.lyt $(RESULTS_DIR)/$*
@@ -1025,10 +790,8 @@ $(eval $(call OPEN_GUI_SHORTCUT,route,5_route.odb))
 $(eval $(call OPEN_GUI_SHORTCUT,grt,5_1_grt.odb))
 $(eval $(call OPEN_GUI_SHORTCUT,final,6_final.odb))
 
-$(foreach file,$(RESULTS_DEF),$(eval $(call OPEN_GUI,gui,$(file),DEF_FILE,$(OPENROAD_GUI_CMD))))
-$(foreach file,$(RESULTS_ODB),$(eval $(call OPEN_GUI,gui,$(file),ODB_FILE,$(OPENROAD_GUI_CMD))))
-$(foreach file,$(RESULTS_DEF),$(eval $(call OPEN_GUI,open,$(file),DEF_FILE,$(OPENROAD_NO_EXIT_CMD))))
-$(foreach file,$(RESULTS_ODB),$(eval $(call OPEN_GUI,open,$(file),ODB_FILE,$(OPENROAD_NO_EXIT_CMD))))
+$(foreach file,$(RESULTS_DEF),$(eval $(call OPEN_GUI,$(file),DEF_FILE)))
+$(foreach file,$(RESULTS_ODB),$(eval $(call OPEN_GUI,$(file),ODB_FILE)))
 
 # Write a def for the corresponding odb
 $(foreach file,$(RESULTS_ODB),$(file).def): %.def:
@@ -1058,10 +821,6 @@ all_verilog : $(foreach file,$(RESULTS_ODB),$(file).v)
 .PHONY: handoff
 handoff : all_defs all_verilog
 
-.PHONY: print-%
-# Print any variable, for instance: make print-DIE_AREA
-print-%  : ; @echo "$* = $($*)"
-
 .PHONY: test-unset-and-make-%
 test-unset-and-make-%: ; $(UNSET_AND_MAKE) $*
 
@@ -1071,7 +830,13 @@ klayout:
 
 .phony: run
 run:
-	$(OPENROAD_CMD) -no_splash $(RUN_SCRIPT)
+	@mkdir -p $(RESULTS_DIR) $(LOG_DIR) $(REPORTS_DIR) $(OBJECTS_DIR)
+	($(OPENROAD_CMD) -no_splash $(if $(filter %.py,$(RUN_SCRIPT)),-python) $(RUN_SCRIPT) 2>&1 | tee $(abspath $(LOG_DIR)/$(RUN_LOG_NAME_STEM).log))
+
+export RUN_YOSYS_ARGS ?= -c $(SCRIPTS_DIR)/yosys_keep.tcl
+.phony: run-yosys
+run-yosys:
+	$(YOSYS_EXE) $(RUN_YOSYS_ARGS)
 
 # Utilities
 #-------------------------------------------------------------------------------

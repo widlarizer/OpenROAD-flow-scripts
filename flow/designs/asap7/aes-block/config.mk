@@ -3,8 +3,8 @@ export PLATFORM               = asap7
 export DESIGN_NAME            = aes_cipher_top
 export DESIGN_NICKNAME        = aes-block
 
-export VERILOG_FILES = $(sort $(wildcard ./designs/src/aes/*.v))
-export SDC_FILE      = ./designs/$(PLATFORM)/$(DESIGN_NICKNAME)/constraint.sdc
+export VERILOG_FILES = $(sort $(wildcard $(DESIGN_HOME)/src/aes/*.v))
+export SDC_FILE      = $(DESIGN_HOME)/$(PLATFORM)/$(DESIGN_NICKNAME)/constraint.sdc
 
 export ABC_AREA               = 1
 
@@ -28,3 +28,5 @@ export PWR_NETS_VOLTAGES      =
 
 # The macros are very small so use a smaller halo
 export MACRO_PLACE_HALO        ?= 5 5
+
+export ROUTING_LAYER_ADJUSTMENT = 0.3
