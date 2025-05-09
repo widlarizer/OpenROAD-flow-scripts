@@ -1,11 +1,9 @@
 
-DESIGN_DIR              := $(realpath $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST)))))
-
 export DESIGN_NICKNAME   = aes
 export DESIGN_NAME       = aes_cipher_top
 export PLATFORM          = gf55
 
-export VERILOG_FILES     = $(sort $(wildcard ./designs/src/$(DESIGN_NICKNAME)/*.v))
+export VERILOG_FILES     = $(sort $(wildcard $(DESIGN_HOME)/src/$(DESIGN_NICKNAME)/*.v))
 export SDC_FILE          = $(DESIGN_DIR)/constraint.sdc
 export ABC_AREA          = 1
 

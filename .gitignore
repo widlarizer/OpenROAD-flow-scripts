@@ -87,7 +87,6 @@ perf.data.old
 # documentation specific
 docs/main
 docs/build
-GitGuide.md
 SupportedOS.md
 index2.md
 Manpage.md
@@ -95,3 +94,6 @@ mainREADME.md
 build
 .scala-build/
 .bsp/
+
+# autotuner artifacts
+metadata-base-at.json

@@ -3,10 +3,20 @@ yosys -import
 source $::env(SCRIPTS_DIR)/util.tcl
 erase_non_stage_variables synth
 
-if {[env_var_exists_and_non_empty CACHED_NETLIST]} {
-  exec cp $::env(CACHED_NETLIST) $::env(RESULTS_DIR)/1_1_yosys.v
+# If using a cached, gate level netlist, then copy over to the results dir with
+# preserve timestamps flag set. If you don't, subsequent runs will cause the
+# floorplan step to be re-executed.
+if {[env_var_exists_and_non_empty SYNTH_NETLIST_FILES]} {
+  if {[llength $::env(SYNTH_NETLIST_FILES)] == 1} {
+    log_cmd exec cp -p $::env(SYNTH_NETLIST_FILES) $::env(RESULTS_DIR)/1_1_yosys.v
+  } else {
+    # The date should be the most recent date of the files, but to
+    # keep things simple we just use the creation date
+    log_cmd exec cat {*}$::env(SYNTH_NETLIST_FILES) > $::env(RESULTS_DIR)/1_1_yosys.v
+  }
+  log_cmd exec cp -p $::env(SDC_FILE) $::env(RESULTS_DIR)/1_synth.sdc
   if {[env_var_exists_and_non_empty CACHED_REPORTS]} {
-    exec cp {*}$::env(CACHED_REPORTS) $::env(REPORTS_DIR)/.
+    log_cmd exec cp -p {*}$::env(CACHED_REPORTS) $::env(REPORTS_DIR)/.
   }
   exit
 }
@@ -32,33 +42,17 @@ foreach file $::env(VERILOG_FILES) {
   }
 }
 
-
-
-
-# Read standard cells and macros as blackbox inputs
-# These libs have their dont_use properties set accordingly
-read_liberty -lib {*}$::env(DONT_USE_LIBS)
-
-# Apply toplevel parameters (if exist)
-if {[env_var_exists_and_non_empty VERILOG_TOP_PARAMS]} {
-  dict for {key value} $::env(VERILOG_TOP_PARAMS) {
-    chparam -set $key $value $::env(DESIGN_NAME)
-  }
-}
+source $::env(SCRIPTS_DIR)/synth_stdcells.tcl
 
 # Read platform specific mapfile for OPENROAD_CLKGATE cells
 if {[env_var_exists_and_non_empty CLKGATE_MAP_FILE]} {
   read_verilog -lib $::env(CLKGATE_MAP_FILE)
 }
 
-# Mark modules to keep from getting removed in flattening
-if {[env_var_exists_and_non_empty PRESERVE_CELLS]} {
-  # Expand hierarchy since verilog was read in with -defer
+if {[env_var_exists_and_non_empty SYNTH_BLACKBOXES]} {
   hierarchy -check -top $::env(DESIGN_NAME)
-  foreach cell $::env(PRESERVE_CELLS) {
-    select -module $cell
-    setattr -mod -set keep_hierarchy 1
-    select -clear
+  foreach m $::env(SYNTH_BLACKBOXES) {
+    blackbox $m
   }
 }
 
@@ -84,7 +78,7 @@ if {[env_var_exists_and_non_empty DONT_USE_CELLS]} {
   }
 }
 
-if {[env_var_exists_and_non_empty SDC_FILE_CLOCK_PERIOD] && [file isfile $::env(SDC_FILE_CLOCK_PERIOD)]} {
+if {[env_var_exists_and_non_empty SDC_FILE_CLOCK_PERIOD]} {
   puts "Extracting clock period from SDC file: $::env(SDC_FILE_CLOCK_PERIOD)"
   set fp [open $::env(SDC_FILE_CLOCK_PERIOD) r]
   set clock_period [string trim [read $fp]]
@@ -106,13 +100,31 @@ puts $constr "set_driving_cell $::env(ABC_DRIVER_CELL)"
 puts $constr "set_load $::env(ABC_LOAD_IN_FF)"
 close $constr
 
-proc synthesize_check {synth_args} {
-  # Generic synthesis
-  log_cmd synth -top $::env(DESIGN_NAME) -run :fine {*}$synth_args
-  json -o $::env(RESULTS_DIR)/mem.json
-  # Run report and check here so as to fail early if this synthesis run is doomed
-  exec -- python3 $::env(SCRIPTS_DIR)/mem_dump.py --max-bits $::env(SYNTH_MEMORY_MAX_BITS) $::env(RESULTS_DIR)/mem.json
-  synth -top $::env(DESIGN_NAME) -run fine: {*}$synth_args
-  # Get rid of indigestibles
-  chformal -remove
+proc convert_liberty_areas {} {
+  cellmatch -derive_luts =A:liberty_cell
+  # find a reference nand2 gate
+  set found_cell ""
+  set found_cell_area ""
+  # iterate over all cells with a nand2 signature
+  foreach cell [tee -q -s result.string select -list-mod =*/a:lut=4'b0111 %m] {
+    if {! [rtlil::has_attr -mod $cell area]} {
+      puts "Cell $cell missing area information"
+      continue
+    }
+    set area [rtlil::get_attr -string -mod $cell area]
+    if {$found_cell == "" || [expr $area < $found_cell_area]} {
+      set found_cell $cell
+      set found_cell_area $area
+    }
+  }
+  if {$found_cell == ""} {
+    error "reference nand2 cell not found"
+  }
+
+  # convert the area on all Liberty cells to a gate number equivalent
+  foreach box [tee -q -s result.string select -list-mod =A:area =A:liberty_cell %i] {
+    set area [rtlil::get_attr -mod -string $box area]
+    set gate_eq [expr int($area / $found_cell_area)]
+    rtlil::set_attr -mod -uint $box gate_cost_equivalent $gate_eq
+  }
 }
